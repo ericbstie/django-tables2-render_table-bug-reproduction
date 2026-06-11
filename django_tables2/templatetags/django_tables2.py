@@ -157,18 +157,21 @@ class RenderTableNode(Node):
             # assume some iterable was given
             template = select_template(template_name)
 
+        # Work on a deep copy bound to a local name, so the cleanup below
+        # only touches this call's scope, not the shared table attribute.
+        local_context = copy.deepcopy(context)
         try:
             # HACK:
             # TemplateColumn benefits from being able to use the context
             # that the table is rendered in. The current way this is
             # achieved is to temporarily attach the context to the table,
             # which TemplateColumn then looks for and uses.
-            table.context = copy.copy(context)
+            table.context = local_context
             table.before_render(request)
 
             return template.render(context={"table": table}, request=request)
         finally:
-            del table.context
+            del local_context
 
 
 @register.tag
