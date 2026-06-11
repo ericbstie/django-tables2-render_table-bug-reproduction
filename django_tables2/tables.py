@@ -415,6 +415,42 @@ class Table(metaclass=DeclarativeColumnsMetaclass):
         """
         return None
 
+    @property
+    def context(self):
+        """
+        The template context this table is currently being rendered in.
+
+        ``{% render_table %}`` attaches its context here so that `.TemplateColumn`
+        can render cell templates within the surrounding template context.
+
+        The contexts are kept in a stack: assigning pushes a context onto the
+        stack and ``del table.context`` pops it again. This makes attaching and
+        detaching a context re-entrant, so a table instance can be rendered
+        from within its own rendering (e.g. a nested ``{% render_table %}`` in
+        a custom table template or in `.Table.before_render`).
+        """
+        try:
+            return self._context_stack[-1]
+        except (AttributeError, IndexError):
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute 'context'"
+            ) from None
+
+    @context.setter
+    def context(self, value):
+        if not hasattr(self, "_context_stack"):
+            self._context_stack = []
+        self._context_stack.append(value)
+
+    @context.deleter
+    def context(self):
+        try:
+            self._context_stack.pop()
+        except (AttributeError, IndexError):
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute 'context'"
+            ) from None
+
     def before_render(self, request):
         """
         Perform an action just before rendering the template.
