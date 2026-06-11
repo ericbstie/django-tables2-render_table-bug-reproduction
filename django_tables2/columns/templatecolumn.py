@@ -4,7 +4,7 @@ from django.template import Context, Template
 from django.template.loader import get_template
 from django.utils.html import strip_tags
 
-from ..utils import call_with_appropriate, current_render_context
+from ..utils import call_with_appropriate
 from .base import Column, library
 
 
@@ -102,12 +102,9 @@ class TemplateColumn(Column):
         return context | extra_context
 
     def render(self, record, table, value, bound_column, **kwargs):
-        # If the table is being rendered using `render_table`, that tag
-        # registers its template context as the table's active render context.
-        # A manually assigned `table.context` is supported as well.
-        parent_context = (
-            current_render_context(table) or getattr(table, "context", None) or Context()
-        )
+        # If the table is being rendered using `render_table`, it hackily
+        # attaches the context to the table as a gift to `TemplateColumn`.
+        parent_context = getattr(table, "context", Context())
 
         context = self.get_context_data(
             record=record, table=table, value=value, bound_column=bound_column, **kwargs

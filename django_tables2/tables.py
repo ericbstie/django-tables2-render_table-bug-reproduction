@@ -12,7 +12,14 @@ from .columns import BoundColumns, Column, library
 from .config import RequestConfig
 from .data import TableData
 from .rows import BoundRows
-from .utils import Accessor, AttributeDict, OrderBy, OrderByTuple, Sequence
+from .utils import (
+    Accessor,
+    AttributeDict,
+    OrderBy,
+    OrderByTuple,
+    Sequence,
+    get_render_context,
+)
 
 
 class DeclarativeColumnsMetaclass(type):
@@ -414,6 +421,47 @@ class Table(metaclass=DeclarativeColumnsMetaclass):
             ...         }]
         """
         return None
+
+    @property
+    def context(self):
+        """
+        The template context this table is currently being rendered in.
+
+        While ``{% render_table %}`` renders this table, this returns the
+        context of the innermost such render, so `.TemplateColumn` can render
+        cell templates within the surrounding template context. The active
+        render contexts are tracked in a `~contextvars.ContextVar`, making
+        re-entrant renders of the same instance (e.g. a nested
+        ``{% render_table %}`` in a custom table template or in
+        `.Table.before_render`) as well as concurrent renders from multiple
+        threads or async tasks behave correctly.
+
+        Outside of ``{% render_table %}``, a manually assigned context is
+        returned instead; assigning and deleting behave like a plain
+        attribute.
+        """
+        render_context = get_render_context(self)
+        if render_context is not None:
+            return render_context
+        try:
+            return self.__dict__["context"]
+        except KeyError:
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute 'context'"
+            ) from None
+
+    @context.setter
+    def context(self, value):
+        self.__dict__["context"] = value
+
+    @context.deleter
+    def context(self):
+        try:
+            del self.__dict__["context"]
+        except KeyError:
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute 'context'"
+            ) from None
 
     def before_render(self, request):
         """

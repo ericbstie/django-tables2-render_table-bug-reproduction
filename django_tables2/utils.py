@@ -2,9 +2,9 @@ import inspect
 import sys
 import warnings
 from collections import OrderedDict
+from contextvars import ContextVar
 from functools import total_ordering
 from itertools import chain
-from weakref import WeakKeyDictionary
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
@@ -620,28 +620,32 @@ def computed_values(d, kwargs=None):
     return result
 
 
-# Registry mapping a table instance to the stack of template contexts of the
-# `{% render_table %}` calls it is currently being rendered in. Keeping the
-# contexts out of the table instance (and in a stack) allows the same instance
-# to be rendered re-entrantly, e.g. from a nested `{% render_table %}` in a
-# custom table template or in `Table.before_render()`.
-_render_contexts = WeakKeyDictionary()
+# Stack of (table, context) pairs for the `{% render_table %}` calls that are
+# currently rendering, innermost last. Stored in a `~contextvars.ContextVar`
+# (as an immutable tuple) so that renders are isolated per thread and per
+# async task, and so that re-entrant renders of the same table instance
+# simply nest.
+_render_contexts: ContextVar = ContextVar("django_tables2_render_contexts", default=())
 
 
-def push_render_context(table, context):
-    """Mark `context` as the innermost active render context for `table`."""
-    _render_contexts.setdefault(table, []).append(context)
+def enter_render_context(table, context):
+    """
+    Activate `context` as the innermost render context of `table`.
+
+    Returns a token that must be passed to `exit_render_context` when the
+    render is finished.
+    """
+    return _render_contexts.set(_render_contexts.get() + ((table, context),))
 
 
-def pop_render_context(table):
-    """Deactivate the innermost active render context for `table`."""
-    stack = _render_contexts[table]
-    stack.pop()
-    if not stack:
-        del _render_contexts[table]
+def exit_render_context(token):
+    """Deactivate the render context activated by the matching `enter_render_context` call."""
+    _render_contexts.reset(token)
 
 
-def current_render_context(table):
+def get_render_context(table):
     """Return the innermost active render context for `table`, or `None`."""
-    stack = _render_contexts.get(table)
-    return stack[-1] if stack else None
+    for rendering_table, context in reversed(_render_contexts.get()):
+        if rendering_table is table:
+            return context
+    return None

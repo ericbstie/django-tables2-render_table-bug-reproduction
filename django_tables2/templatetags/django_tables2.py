@@ -12,7 +12,7 @@ from django.utils.http import urlencode
 
 import django_tables2 as tables
 from django_tables2.paginators import LazyPaginator
-from django_tables2.utils import AttributeDict, pop_render_context, push_render_context
+from django_tables2.utils import AttributeDict, enter_render_context, exit_render_context
 
 register = template.Library()
 kwarg_re = re.compile(r"(?:(.+)=)?(.+)")
@@ -157,15 +157,15 @@ class RenderTableNode(Node):
             template = select_template(template_name)
 
         # TemplateColumn benefits from being able to use the context that the
-        # table is rendered in, so register this context as the innermost
-        # active render context for the table while rendering.
-        push_render_context(table, context)
+        # table is rendered in. Activate this context as the table's render
+        # context (exposed as `table.context`) for the duration of the render.
+        token = enter_render_context(table, context)
         try:
             table.before_render(request)
 
             return template.render(context={"table": table}, request=request)
         finally:
-            pop_render_context(table)
+            exit_render_context(token)
 
 
 @register.tag

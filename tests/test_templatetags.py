@@ -1,3 +1,4 @@
+import threading
 from urllib.parse import parse_qs
 
 from django.core.exceptions import ImproperlyConfigured
@@ -94,6 +95,33 @@ class RenderTableTagTest(TestCase):
         template = Template("{% load django_tables2 %}{% render_table table %}")
         template.render(Context({"request": build_request(), "table": table}))
         self.assertIs(table.context, context)
+
+    def test_concurrent_render_of_same_table_in_threads(self):
+        """Concurrent renders of the same instance should each see their own context."""
+
+        class MyTable(Table):
+            name = TemplateColumn(template_code="{{ marker }}:{{ record.name }}")
+
+        table = MyTable([{"name": "Brad"}])
+        template = Template("{% load django_tables2 %}{% render_table table %}")
+        request = build_request()
+        barrier = threading.Barrier(4)
+        results = {}
+
+        def render(marker):
+            barrier.wait()
+            results[marker] = template.render(
+                Context({"request": request, "table": table, "marker": marker})
+            )
+
+        threads = [threading.Thread(target=render, args=(f"marker{i}",)) for i in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        for marker, html in results.items():
+            self.assertIn(f"{marker}:Brad", html)
 
     def test_table_context_is_RequestContext(self):
         class MyTable(Table):
