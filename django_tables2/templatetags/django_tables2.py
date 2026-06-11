@@ -1,3 +1,4 @@
+import copy
 import re
 from collections import OrderedDict
 
@@ -162,7 +163,7 @@ class RenderTableNode(Node):
             # that the table is rendered in. The current way this is
             # achieved is to temporarily attach the context to the table,
             # which TemplateColumn then looks for and uses.
-            table.context = context
+            table.context = copy.copy(context)
             table.before_render(request)
 
             return template.render(context={"table": table}, request=request)
