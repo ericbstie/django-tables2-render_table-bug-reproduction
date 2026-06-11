@@ -4,6 +4,7 @@ import warnings
 from collections import OrderedDict
 from functools import total_ordering
 from itertools import chain
+from weakref import WeakKeyDictionary
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
@@ -617,3 +618,30 @@ def computed_values(d, kwargs=None):
             v = computed_values(v, kwargs=kwargs)
         result[k] = v
     return result
+
+
+# Registry mapping a table instance to the stack of template contexts of the
+# `{% render_table %}` calls it is currently being rendered in. Keeping the
+# contexts out of the table instance (and in a stack) allows the same instance
+# to be rendered re-entrantly, e.g. from a nested `{% render_table %}` in a
+# custom table template or in `Table.before_render()`.
+_render_contexts = WeakKeyDictionary()
+
+
+def push_render_context(table, context):
+    """Mark `context` as the innermost active render context for `table`."""
+    _render_contexts.setdefault(table, []).append(context)
+
+
+def pop_render_context(table):
+    """Deactivate the innermost active render context for `table`."""
+    stack = _render_contexts[table]
+    stack.pop()
+    if not stack:
+        del _render_contexts[table]
+
+
+def current_render_context(table):
+    """Return the innermost active render context for `table`, or `None`."""
+    stack = _render_contexts.get(table)
+    return stack[-1] if stack else None

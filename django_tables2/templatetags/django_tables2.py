@@ -12,7 +12,7 @@ from django.utils.http import urlencode
 
 import django_tables2 as tables
 from django_tables2.paginators import LazyPaginator
-from django_tables2.utils import AttributeDict
+from django_tables2.utils import AttributeDict, pop_render_context, push_render_context
 
 register = template.Library()
 kwarg_re = re.compile(r"(?:(.+)=)?(.+)")
@@ -156,18 +156,16 @@ class RenderTableNode(Node):
             # assume some iterable was given
             template = select_template(template_name)
 
+        # TemplateColumn benefits from being able to use the context that the
+        # table is rendered in, so register this context as the innermost
+        # active render context for the table while rendering.
+        push_render_context(table, context)
         try:
-            # HACK:
-            # TemplateColumn benefits from being able to use the context
-            # that the table is rendered in. The current way this is
-            # achieved is to temporarily attach the context to the table,
-            # which TemplateColumn then looks for and uses.
-            table.context = context
             table.before_render(request)
 
             return template.render(context={"table": table}, request=request)
         finally:
-            del table.context
+            pop_render_context(table)
 
 
 @register.tag
